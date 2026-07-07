@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบแจ้งซ่อมและบันทึกงานช่างเรียลไทม์ (Firebase)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&family=Sarabun:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'Sarabun', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Prompt', 'Sarabun', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen antialiased">
+
+    <div class="max-w-7xl mx-auto p-4 md:p-8">
+        <header class="mb-8 text-center md:text-left flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div>
+                <h1 class="text-2xl font-semibold tracking-tight text-slate-900">🛠️ Repair Sync Pro</h1>
+                <p class="text-sm text-slate-500 mt-0.5 font-light">ระบบแจ้งซ่อมและติดตามงานช่างฝ่ายผลิตแบบเรียลไทม์</p>
+            </div>
+            <button id="btn-permission" onclick="requestNotificationPermission()" class="mt-4 md:mt-0 bg-slate-800 hover:bg-slate-950 text-white font-medium px-4 py-2 rounded-lg transition-all shadow-sm text-xs tracking-wide">
+                🔔 เปิดการแจ้งเตือนและการสั่น
+            </button>
+        </header>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+            <h3 class="text-base font-medium text-slate-900 mb-4 flex items-center gap-2">📊 เรียกดูข้อมูลย้อนหลัง & ออกรายงาน</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1.5">ตั้งแต่วันที่</label>
+                    <input type="date" id="filter-start-date" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:border-slate-400 focus:bg-white transition-all">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1.5">ถึงวันที่</label>
+                    <input type="date" id="filter-end-date" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:border-slate-400 focus:bg-white transition-all">
+                </div>
+                <div class="md:col-span-2 flex gap-2">
+                    <button onclick="applyDateFilter()" class="flex-1 bg-slate-800 hover:bg-slate-950 text-white font-medium px-4 py-2 rounded-lg text-xs tracking-wide transition-all">
+                        🔍 ค้นหา
+                    </button>
+                    <button onclick="clearDateFilter()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-4 py-2 rounded-lg text-xs tracking-wide transition-all">
+                        ล้างค่า
+                    </button>
+                    <button onclick="exportToExcel()" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-4 py-2 rounded-lg text-xs tracking-wide transition-all flex items-center justify-center gap-1.5 shadow-sm">
+                        📥 ดาวน์โหลด Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-fit">
+                <h2 class="text-base font-medium text-slate-900 mb-4 flex items-center gap-2">
+                    📝 แบบฟอร์มแจ้งซ่อม (สำหรับไลน์ผลิต)
+                </h2>
+                <form id="repair-form" onsubmit="window.handleSubmit(event)" class="space-y-4 text-sm">
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">ชื่อผู้แจ้ง</label>
+                        <input type="text" id="reporter" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-slate-400 focus:bg-white focus:outline-none transition-all placeholder-slate-400" placeholder="ระบุชื่อพนักงาน">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">ชื่อเครื่องจักร</label>
+                        <select id="machine_name" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-slate-400 focus:bg-white focus:outline-none transition-all text-slate-700">
+                            <option value="" disabled selected>-- เลือกเครื่องจักร --</option>
+                            <option value="เครื่องบรรจุ Auto 8 หัว">เครื่องบรรจุ Auto 8 หัว</option>
+                            <option value="เครื่องบรรจุ 1">เครื่องบรรจุ 1</option>
+                            <option value="เครื่องบรรจุ 2">เครื่องบรรจุ 2</option>
+                            <option value="เครื่องบรรจุ 3">เครื่องบรรจุ 3</option>
+                            <option value="เครื่องบรรจุ 4 (Rotary)">เครื่องบรรจุ 4 (Rotary)</option>
+                            <option value="เครื่องบรรจุขวดแก้ว">เครื่องบรรจุขวดแก้ว</option>
+                            <option value="เครื่องบรรจุน้ำมันพริกเผา">เครื่องบรรจุน้ำมันพริกเผา</option>
+                            <option value="เครื่องบรรจุขวด (oz.)">เครื่องบรรจุขวด (oz.)</option>
+                            <option value="เครื่องบรรจุซอง No. 1">เครื่องบรรจุซอง No. 1</option>
+                            <option value="เครื่องบรรจุซอง No. 2">เครื่องบรรจุซอง No. 2</option>
+                            <option value="เครื่องบรรจุซอง No. 3">เครื่องบรรจุซอง No. 3</option>
+                            <option value="เครื่องบรรจุซอง (Rotary)">เครื่องบรรจุซอง (Rotary)</option>
+                            <option value="เครื่องบรรจุขวด">เครื่องบรรจุขวด</option>
+                            <option value="เครื่องบรรจุซองจิ๋ว No. 1">เครื่องบรรจุซองจิ๋ว No. 1</option>
+                            <option value="เครื่องบรรจุซองจิ๋ว No. 2">เครื่องบรรจุซองจิ๋ว No. 2</option>
+                            <option value="เครื่องบรรจุซองจิ๋ว No. 3">เครื่องบรรจุซองจิ๋ว No. 3</option>
+                            <option value="เครื่องบรรจุซองจิ๋ว No. 4">เครื่องบรรจุซองจิ๋ว No. 4</option>
+                            <option value="เครื่องบรรจุหลอดบีบ">เครื่องบรรจุหลอดบีบ</option>
+                            <option value="เครื่องรีดซอง">เครื่องรีดซอง</option>
+                            <option value="เครื่องยิงวันที่">เครื่องยิงวันที่</option>
+                            <option value="หม้อต้มซอส">หม้อต้มซอส</option>
+                            <option value="หม้อต้มน้ำจิ้ม">หม้อต้มน้ำจิ้ม</option>
+                            <option value="หม้อต้มบ๊วย">หม้อต้มบ๊วย</option>
+                            <option value="หม้อต้มสุกี้">หม้อต้มสุกี้</option>
+                            <option value="ถังพัก">ถังพัก</option>
+                            <option value="ถังผสม">ถังผสม</option>
+                            <option value="หม้อโรโบคิ้ว">หม้อโรโบคิ้ว</option>
+                            <option value="หม้อทอดพริก">หม้อทอดพริก</option>
+                            <option value="หม้อทอดถั่ว">หม้อทอดถั่ว</option>
+                            <option value="หม้อทอดกระเทียม">หม้อทอดกระเทียม</option>
+                            <option value="หม้อทอดสูญญากาศ">หม้อทอดสูญญากาศ</option>
+                            <option value="เครื่องบดหยาบ">เครื่องบดหยาบ</option>
+                            <option value="เครื่องบดไลน์ 1">เครื่องบดไลน์ 1</option>
+                            <option value="เครื่องบดไลน์ 2">เครื่องบดไลน์ 2</option>
+                            <option value="เครื่องบดไลน์ 3">เครื่องบดไลน์ 3</option>
+                            <option value="เครื่องบดไลน์ 4 (เออเชล)">เครื่องบดไลน์ 4 (เออเชล)</option>
+                            <option value="เครื่องบรรจุพริกถ้วย">เครื่องบรรจุพริกถ้วย</option>
+                            <option value="เครื่องซีลพริกถ้วย">เครื่องซีลพริกถ้วย</option>
+                            <option value="เครื่องแพ็ครวม">เครื่องแพ็ครวม</option>
+                            <option value="เครื่องปิดฝา">เครื่องปิดฝา</option>
+                            <option value="เครื่องชริ้งค์ฟิล์มสุกี้">เครื่องชริ้งค์ฟิล์มสุกี้</option>
+                            <option value="เครื่องติดสติ๊กเกอร์">เครื่องติดสติ๊กเกอร์</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">สถานที่ / ไลน์ผลิต</label>
+                        <select id="location" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-slate-400 focus:bg-white focus:outline-none transition-all text-slate-700">
+                            <option value="" disabled selected>-- เลือกสถานที่ / ไลน์ผลิต --</option>
+                            <option value="บรรจุพริกเผา">บรรจุพริกเผา</option>
+                            <option value="บรรจุซอส">บรรจุซอส</option>
+                            <option value="ห้องล้าง">ห้องล้าง</option>
+                            <option value="ห้องทอด">ห้องทอด</option>
+                            <option value="ห้องบด">ห้องบด</option>
+                            <option value="ผลิตซอส">ผลิตซอส</option>
+                            <option value="ห้องชั่งสาร">ห้องชั่งสาร</option>
+                            <option value="ห้องอบ">ห้องอบ</option>
+                            <option value="ลานตากชั้น 2">ลานตากชั้น 2</option>
+                            <option value="ลานตากชั้น 3">ลานตากชั้น 3</option>
+                            <option value="แพ็คพิเศษ">แพ็คพิเศษ</option>
+                            <option value="ห้องบรรจุพริกถ้วย">ห้องบรรจุพริกถ้วย</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">อาการชำรุด / รายละเอียด</label>
+                        <textarea id="details" rows="3" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-slate-400 focus:bg-white focus:outline-none transition-all placeholder-slate-400" placeholder="ระบุอาการผิดปกติที่พบ..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">ระดับความเร่งด่วน</label>
+                        <select id="priority" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-slate-400 focus:bg-white focus:outline-none transition-all text-slate-700">
+                            <option value="ต่ำ">🟢 ต่ำ (ใช้งานได้ปกติ แต่ควรตรวจสอบ)</option>
+                            <option value="กลาง" selected>🟡 กลาง (ส่งผลกระทบต่อความเร็วการผลิต)</option>
+                            <option value="สูง">🔴 สูง (ด่วนที่สุด / ไลน์ผลิตหยุดชะงัก)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-slate-800 hover:bg-slate-950 text-white font-medium py-2.5 rounded-lg text-xs tracking-wider transition-all shadow-sm uppercase mt-2">
+                        ส่งข้อมูลแจ้งซ่อม 🚀
+                    </button>
+                </form>
+            </div>
+
+            <div class="xl:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-base font-medium text-slate-900 flex items-center gap-2">
+                        📋 แผงติดตามสถานะงานซ่อมเรียลไทม์
+                    </h2>
+                    <span class="bg-emerald-50 text-emerald-700 text-[10px] font-medium px-2.5 py-0.5 rounded-full border border-emerald-100 tracking-wider">
+                        LIVE CONNECTION
+                    </span>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[900px]">
+                        <thead>
+                            <tr class="border-b border-slate-100 text-slate-400 text-xs tracking-wider">
+                                <th class="pb-3 font-medium w-1/3">รายละเอียดเครื่องจักร / เวลาที่แจ้ง</th>
+                                <th class="pb-3 font-medium">ความเร่งด่วน</th>
+                                <th class="pb-3 font-medium">สถานะ</th>
+                                <th class="pb-3 font-medium w-1/4">บันทึกการแก้ไขของช่าง</th>
+                                <th class="pb-3 font-medium text-center">การดำเนินการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="repair-list" class="divide-y divide-slate-100 text-sm text-slate-600">
+                            <tr class="text-slate-400">
+                                <td colspan="5" class="py-12 text-center text-xs font-light">กำลังซิงค์ฐานข้อมูลคลาวด์...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tech-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50 transition-all">
+        <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl border border-slate-100 space-y-4">
+            <h3 class="text-base font-semibold text-slate-900 flex items-center gap-2">🛠️ อัปเดตบันทึกการทำงานของช่าง</h3>
+            <div class="bg-slate-50 p-3 rounded-lg text-xs text-slate-600 space-y-1.5 border border-slate-100">
+                <p><strong class="text-slate-800">เครื่องจักร:</strong> <span id="modal-machine"></span></p>
+                <p><strong class="text-slate-800">เวลาที่เข้าสู่ระบบ:</strong> <span id="modal-report-time" class="text-slate-900 font-medium"></span></p>
+                <p><strong class="text-slate-800">รายละเอียดอาการ:</strong> <span id="modal-details" class="italic text-slate-500"></span></p>
+            </div>
+            <form id="tech-form" onsubmit="window.handleTechUpdate(event)" class="text-sm">
+                <input type="hidden" id="modal-id">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">สถานะปัจจุบัน</label>
+                        <select id="tech-status" onchange="toggleFixTimeField()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-700">
+                            <option value="รอดำเนินการ">⏳ รอดำเนินการ</option>
+                            <option value="กำลังดำเนินการ">⚙️ กำลังดำเนินการ</option>
+                            <option value="ซ่อมเสร็จสิ้น">✅ ซ่อมเสร็จสิ้น</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">มาตรการแก้ไข / สาเหตุปัญหา</label>
+                        <textarea id="tech-fix-details" rows="3" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all placeholder-slate-400" placeholder="โปรดบันทึกวิธีซ่อม แซม หรืออะไหล่ที่เปลี่ยน..."></textarea>
+                    </div>
+                    <div id="fix-time-container">
+                        <label class="block font-medium text-slate-700 mb-1">เวลาที่ปฏิบัติงานเสร็จ</label>
+                        <input type="datetime-local" id="tech-fix-time" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-700">
+                    </div>
+                </div>
+                <div class="mt-5 flex gap-2 justify-end text-xs font-medium">
+                    <button type="button" onclick="window.closeModal()" class="px-4 py-2 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-all">ยกเลิก</button>
+                    <button type="submit" class="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-950 transition-all tracking-wide">บันทึกข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="user-edit-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50 transition-all">
+        <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl border border-slate-100 space-y-4">
+            <h3 class="text-base font-semibold text-slate-900 flex items-center gap-2">✏️ แก้ไขข้อมูลบันทึกที่คลาดเคลื่อน</h3>
+            <form id="user-edit-form" onsubmit="window.handleUserUpdate(event)" class="text-sm">
+                <input type="hidden" id="edit-modal-id">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">ชื่อผู้แจ้ง</label>
+                        <input type="text" id="edit-reporter" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">ชื่อเครื่องจักร</label>
+                        <select id="edit-machine_name" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-700">
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">สถานที่ / ไลน์ผลิต</label>
+                        <select id="edit-location" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-700">
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">อาการชำรุด / รายละเอียด</label>
+                        <textarea id="edit-details" rows="3" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all"></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">ระดับความเร่งด่วน</label>
+                        <select id="edit-priority" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-700">
+                            <option value="ต่ำ">🟢 ต่ำ</option>
+                            <option value="กลาง">🟡 กลาง</option>
+                            <option value="สูง">🔴 สูง</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-5 flex gap-2 justify-end text-xs font-medium">
+                    <button type="button" onclick="window.closeEditModal()" class="px-4 py-2 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-all">ยกเลิก</button>
+                    <button type="submit" class="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all tracking-wide">บันทึกการปรับปรุงข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        window.mockDatabase = [];
+        let startDateFilter = null;
+        let endDateFilter = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById('edit-machine_name').innerHTML = document.getElementById('machine_name').innerHTML;
+            document.getElementById('edit-location').innerHTML = document.getElementById('location').innerHTML;
+        });
+
+        function requestNotificationPermission() {
+            if (!("Notification" in window)) {
+                alert("เบราว์เซอร์นี้ไม่รองรับระบบแจ้งเตือน");
+                return;
+            }
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    alert("เปิดระบบแจ้งเตือนเรียบร้อยแล้ว");
+                    document.getElementById('btn-permission').classList.add('hidden');
+                }
+            });
+        }
+
+        if (Notification.permission === "granted") {
+            const btn = document.getElementById('btn-permission');
+            if (btn) btn.classList.add('hidden');
+        }
+
+        window.triggerAlert = function(title, message) {
+            if (Notification.permission === "granted") {
+                new Notification(title, { body: message });
+            }
+            if ("vibrate" in navigator) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        }
+
+        function applyDateFilter() {
+            const startVal = document.getElementById('filter-start-date').value;
+            const endVal = document.getElementById('filter-end-date').value;
+
+            if(!startVal || !endVal) {
+                alert("โปรดระบุช่วงวันที่ระบุให้ครบถ้วน");
+                return;
+            }
+
+            startDateFilter = new Date(startVal);
+            startDateFilter.setHours(0,0,0,0);
+            
+            endDateFilter = new Date(endVal);
+            endDateFilter.setHours(23,59,59,999);
+
+            window.renderList();
+        }
+
+        function clearDateFilter() {
+            document.getElementById('filter-start-date').value = '';
+            document.getElementById('filter-end-date').value = '';
+            startDateFilter = null;
+            endDateFilter = null;
+            window.renderList();
+        }
+
+        function getFilteredData() {
+            if (!startDateFilter || !endDateFilter) {
+                return window.mockDatabase;
+            }
+            return window.mockDatabase.filter(item => {
+                return item.rawDate >= startDateFilter && item.rawDate <= endDateFilter;
+            });
+        }
+
+        function exportToExcel() {
+            const dataToExport = getFilteredData();
+            if(dataToExport.length === 0) {
+                const startInput = document.getElementById('filter-start-date').value;
+                const endInput = document.getElementById('filter-end-date').value;
+                if (startInput && endInput) {
+                    const formatDate = (dateStr) => dateStr.split('-').reverse().join('/');
+                    alert(`⚠️ ไม่พบข้อมูลแจ้งซ่อมในวันที่เลือก (${formatDate(startInput)} ถึง ${formatDate(endInput)})`);
+                } else {
+                    alert("⚠️ ไม่พบข้อมูลแจ้งซ่อมในวันที่เลือก");
+                }
+                return;
+            }
+
+            let csvContent = "\uFEFF"; 
+            csvContent += "เวลาที่แจ้งซ่อม,ชื่อเครื่องจักร,สถานที่/ไลน์ผลิต,อาการชำรุด,ระดับความเร่งด่วน,ชื่อผู้แจ้ง,สถานะ,รายละเอียดการซ่อมของช่าง,เวลาซ่อมเสร็จ\n";
+
+            dataToExport.forEach(item => {
+                const detailsClean = item.details ? item.details.replace(/,/g, " ") : "-";
+                const fixClean = item.fixDetails ? item.fixDetails.replace(/,/g, " ") : "-";
+                
+                const row = [
+                    item.reportTime, item.machine_name, item.location, detailsClean,
+                    item.priority, item.reporter, item.status, fixClean, item.fixTime
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `รายงานแจ้งซ่อม_${new Date().toLocaleDateString('th-TH')}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function openTechModal(firebaseKey) {
+            const item = window.mockDatabase.find(x => x.firebaseKey === firebaseKey);
+            if (!item) return;
+
+            document.getElementById('modal-id').value = item.firebaseKey;
+            document.getElementById('modal-machine').innerText = item.machine_name;
+            document.getElementById('modal-report-time').innerText = item.reportTime;
+            document.getElementById('modal-details').innerText = item.details;
+            document.getElementById('tech-status').value = item.status;
+            document.getElementById('tech-fix-details').value = item.fixDetails.includes('ช่างรับทราบปัญหาแล้ว') ? '' : item.fixDetails;
+            
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('tech-fix-time').value = now.toISOString().slice(0,16);
+
+            toggleFixTimeField();
+            document.getElementById('tech-modal').classList.remove('hidden');
+        }
+
+        window.closeModal = function() {
+            document.getElementById('tech-modal').classList.add('hidden');
+        }
+
+        function openUserEditModal(firebaseKey) {
+            const item = window.mockDatabase.find(x => x.firebaseKey === firebaseKey);
+            if (!item) return;
+
+            document.getElementById('edit-modal-id').value = item.firebaseKey;
+            document.getElementById('edit-reporter').value = item.reporter;
+            document.getElementById('edit-machine_name').value = item.machine_name;
+            document.getElementById('edit-location').value = item.location;
+            document.getElementById('edit-details').value = item.details;
+            document.getElementById('edit-priority').value = item.priority;
+
+            document.getElementById('user-edit-modal').classList.remove('hidden');
+        }
+
+        window.closeEditModal = function() {
+            document.getElementById('user-edit-modal').classList.add('hidden');
+        }
+
+        function toggleFixTimeField() {
+            const status = document.getElementById('tech-status').value;
+            const container = document.getElementById('fix-time-container');
+            if (status === 'ซ่อมเสร็จสิ้น') {
+                container.classList.remove('opacity-40', 'pointer-events-none');
+                document.getElementById('tech-fix-time').required = true;
+            } else {
+                container.classList.add('opacity-40', 'pointer-events-none');
+                document.getElementById('tech-fix-time').required = false;
+            }
+        }
+
+        window.renderList = function() {
+            const listContainer = document.getElementById('repair-list');
+            const filteredData = getFilteredData();
+            
+            if (filteredData.length === 0) {
+                listContainer.innerHTML = `
+                    <tr class="text-slate-400">
+                        <td colspan="5" class="py-12 text-center text-xs font-light">ไม่พบรายการบันทึกการแจ้งซ่อมในระบบ</td>
+                    </tr>`;
+                return;
+            }
+
+            listContainer.innerHTML = filteredData.map(item => {
+                let priorityClass = "bg-slate-50 text-slate-600 border border-slate-200";
+                if (item.priority === "กลาง") priorityClass = "bg-amber-50 text-amber-700 border border-amber-100";
+                if (item.priority === "สูง") priorityClass = "bg-rose-50 text-rose-700 border border-rose-100 font-medium animate-pulse";
+
+                let statusClass = "bg-slate-100 text-slate-600";
+                if (item.status === "กำลังดำเนินการ") statusClass = "bg-blue-50 text-blue-700 border border-blue-100";
+                if (item.status === "ซ่อมเสร็จสิ้น") statusClass = "bg-emerald-50 text-emerald-700 border border-emerald-100";
+
+                let actionButtons = '';
+                if (item.status === 'รอดำเนินการ') {
+                    actionButtons = `
+                        <div class="flex flex-col gap-1.5 justify-center items-center text-[11px]">
+                            <button onclick="window.acceptJob('${item.firebaseKey}')" class="w-full max-w-[110px] bg-slate-800 hover:bg-slate-950 text-white py-1.5 rounded-lg transition-all shadow-sm font-medium text-center cursor-pointer">
+                                👍 รับงานซ่อม
+                            </button>
+                            <button onclick="openUserEditModal('${item.firebaseKey}')" class="w-full max-w-[110px] bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg transition-all shadow-sm font-medium text-center cursor-pointer">
+                                ✏️ แก้ไขข้อมูล
+                            </button>
+                            <button onclick="openTechModal('${item.firebaseKey}')" class="w-full max-w-[110px] bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg transition-all font-medium text-center border border-slate-200 cursor-pointer">
+                                🔧 อัปเดตอื่นๆ
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    actionButtons = `
+                        <div class="text-center text-[11px]">
+                            <button onclick="openTechModal('${item.firebaseKey}')" class="bg-slate-800 hover:bg-slate-950 text-white px-3 py-1.5 rounded-lg transition-all font-medium shadow-sm cursor-pointer">
+                                🔧 บันทึกผลซ่อม
+                            </button>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <tr class="hover:bg-slate-50/50 transition-all border-b border-slate-100 text-slate-700">
+                        <td class="py-4 pr-3">
+                            <div class="font-medium text-slate-900 text-base">${item.machine_name}</div>
+                            <div class="text-xs text-slate-500 mt-0.5 font-light">ไลน์: <span class="font-normal text-slate-700">${item.location}</span> | โดย: ${item.reporter}</div>
+                            <div class="text-[10px] text-slate-400 font-medium mt-0.5 tracking-wider">⏱️ แจ้งเมื่อ: ${item.reportTime}</div>
+                            <div class="text-slate-600 mt-2 text-xs bg-slate-50 p-2 rounded-lg inline-block w-full border border-slate-200/60 font-light">รายละเอียด: <span class="font-normal text-slate-800">${item.details}</span></div>
+                        </td>
+                        <td class="py-4">
+                            <span class="px-2 py-0.5 rounded text-xs font-normal ${priorityClass}">
+                                ${item.priority}
+                            </span>
+                        </td>
+                        <td class="py-4">
+                            <span class="px-2 py-0.5 rounded text-xs font-normal ${statusClass}">
+                                ${item.status}
+                            </span>
+                        </td>
+                        <td class="py-4 max-w-xs pr-2">
+                            <div class="text-xs text-slate-700 bg-slate-50/80 p-2 rounded-lg break-words border border-slate-100 font-light">${item.fixDetails}</div>
+                            ${item.status === 'ซ่อมเสร็จสิ้น' ? `<div class="text-[10px] text-emerald-600 mt-1.5 font-medium tracking-wide">🕒  สำเร็จ: ${item.fixTime}</div>` : ''}
+                        </td>
+                        <td class="py-4 pl-2">
+                            ${actionButtons}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, push, set, update, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAFkIfsqqNzxqHpqttDNvDI32p3ybDxb0A",
+            authDomain: "production-db-f50eb.firebaseapp.com",
+            databaseURL: "https://production-db-f50eb-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "production-db-f50eb",
+            storageBucket: "production-db-f50eb.firebasestorage.app",
+            messagingSenderId: "185909350148",
+            appId: "1:185909350148:web:fe24db420559fc1f030a51",
+            measurementId: "G-VDYB4QGTR8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const repairsRef = ref(db, 'repairs');
+
+        window.sendTelegramNotification = function(message) {
+            const botToken = "8206639292:AAEZNR66zBNlEG_x9rxELsXK4FMqJzMiOh0"; 
+            const chatId = "-5364913977"; 
+
+            const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+            
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: message,
+                    parse_mode: "HTML"
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(!data.ok) console.error("Telegram API Error:", data.description);
+            })
+            .catch(err => console.error("Telegram Network Error:", err));
+        };
+
+        onValue(repairsRef, (snapshot) => {
+            const data = snapshot.val();
+            window.mockDatabase = [];
+            if (data) {
+                Object.keys(data).forEach(key => {
+                    window.mockDatabase.push({
+                        firebaseKey: key,
+                        ...data[key],
+                        rawDate: new Date(data[key].rawDateString)
+                    });
+                });
+                window.mockDatabase.sort((a, b) => b.id - a.id);
+            }
+            window.renderList(); 
+        });
+
+        window.handleSubmit = function(event) {
+            event.preventDefault();
+            const reporter = document.getElementById('reporter').value;
+            const machine_name = document.getElementById('machine_name').value;
+            const location = document.getElementById('location').value;
+            const details = document.getElementById('details').value;
+            const priority = document.getElementById('priority').value;
+
+            const now = new Date();
+            const currentReportTime = now.toLocaleString('th-TH', { hour12: false });
+
+            const newRecord = {
+                id: Date.now(),
+                rawDateString: now.toISOString(),
+                reporter, machine_name, location, details, priority,
+                reportTime: currentReportTime,
+                status: 'รอดำเนินการ',
+                fixDetails: '-',
+                fixTime: '-'
+            };
+
+            const newPostRef = push(repairsRef);
+            set(newPostRef, newRecord).then(() => {
+                document.getElementById('repair-form').reset();
+                window.triggerAlert(`🛠️ แจ้งซ่อมใหม่: ${machine_name}`, `สถานที่: ${location}\nเวลา: ${currentReportTime}`);
+                
+                const telegramMsg = `🛠️ <b>มีงานแจ้งซ่อมใหม่!</b>\n\n📌 <b>เครื่องจักร:</b> ${machine_name}\n📍 <b>ไลน์ผลิต:</b> ${location}\n📝 <b>อาการ:</b> ${details}\n🚨 <b>ความเร่งด่วน:</b> ${priority}\n👤 <b>ผู้แจ้ง:</b> ${reporter}\n⏰ <b>เวลา:</b> ${currentReportTime}`;
+                window.sendTelegramNotification(telegramMsg);
+            });
+        };
+
+        window.acceptJob = function(firebaseKey) {
+            const itemRef = ref(db, `repairs/${firebaseKey}`);
+            update(itemRef, {
+                status: 'กำลังดำเนินการ',
+                fixDetails: '⚙️ ช่างรับทราบปัญหาแล้ว กำลังเข้าดำเนินการแก้ไข'
+            }).then(() => {
+                const item = window.mockDatabase.find(x => x.firebaseKey === firebaseKey);
+                if (item) {
+                    window.triggerAlert(
+                        `⚙️ ช่างรับงานแล้ว: ${item.machine_name}`, 
+                        `ช่างกำลังไปซ่อมให้ที่ไลน์: ${item.location}`
+                    );
+                    const telegramMsg = `⚙️ <b>ช่างรับงานแล้ว!</b>\n\n🛠️ <b>เครื่องจักร:</b> ${item.machine_name}\n📍 <b>ไลน์ผลิต:</b> ${item.location}\n🚦 <b>สถานะ:</b> กำลังดำเนินการซ่อม`;
+                    window.sendTelegramNotification(telegramMsg);
+                }
+            });
+        };
+
+        window.handleTechUpdate = function(event) {
+            event.preventDefault();
+            const firebaseKey = document.getElementById('modal-id').value;
+            const status = document.getElementById('tech-status').value;
+            const fixDetails = document.getElementById('tech-fix-details').value;
+            let fixTime = document.getElementById('tech-fix-time').value;
+
+            let formattedTime = '-';
+            if (status === 'ซ่อมเสร็จสิ้น' && fixTime) {
+                formattedTime = new Date(fixTime).toLocaleString('th-TH', { hour12: false });
+            }
+
+            const itemRef = ref(db, `repairs/${firebaseKey}`);
+            update(itemRef, {
+                status: status,
+                fixDetails: fixDetails || '-',
+                fixTime: formattedTime
+            }).then(() => {
+                window.closeModal();
+                const item = window.mockDatabase.find(x => x.firebaseKey === firebaseKey);
+                if (item) {
+                    window.triggerAlert(`📢 อัปเดตเคส: ${item.machine_name}`, `สถานะเป็น: ${status}`);
+                    const telegramMsg = `📢 <b>อัปเดตสถานะงานซ่อม!</b>\n\n🛠️ <b>เครื่องจักร:</b> ${item.machine_name}\n📌 <b>สถานะปัจจุบัน:</b> ${status}\n🔧 <b>บันทึกช่าง:</b> ${fixDetails}\n⏱️ <b>เวลาเสร็จสิ้น:</b> ${formattedTime}`;
+                    window.sendTelegramNotification(telegramMsg);
+                }
+            });
+        };
+
+        window.handleUserUpdate = function(event) {
+            event.preventDefault();
+            const firebaseKey = document.getElementById('edit-modal-id').value;
+            const reporter = document.getElementById('edit-reporter').value;
+            const machine_name = document.getElementById('edit-machine_name').value;
+            const location = document.getElementById('edit-location').value;
+            const details = document.getElementById('edit-details').value;
+            const priority = document.getElementById('edit-priority').value;
+
+            const itemRef = ref(db, `repairs/${firebaseKey}`);
+            update(itemRef, {
+                reporter, machine_name, location, details, priority
+            }).then(() => {
+                window.closeEditModal();
+                window.triggerAlert(`✏️ แก้ไขข้อมูลสำเร็จ: ${machine_name}`, `ปรับปรุงรายละเอียดเรียบร้อย`);
+            });
+        };
+    </script>
+</body>
+</html>
